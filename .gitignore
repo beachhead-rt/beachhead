@@ -1,0 +1,44 @@
+# --- Engagement-sensitive (NEVER commit) ---
+engagement.local.yaml
+*.local.yaml
+*.local.yaml.bak*
+CLAUDE.local.md
+.token-cache/
+*.token
+.beachhead-tokens.json
+*.sqlite
+*.sqlite.bak
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+exports/
+loot/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+uv.lock
+
+# --- Brainstorming / visual companion (local only) ---
+.superpowers/
+docs/superpowers/
+.claude
+
+# --- Tooling caches ---
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Claude Code (personal, references local vault/memory paths) ---
+.claude/settings.local.json
+.claude/hooks/

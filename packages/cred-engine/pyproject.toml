@@ -1,0 +1,41 @@
+[project]
+name = "cred-engine"
+version = "0.1.0"
+description = "Portable credential scanning engine with confidence scoring, entropy validation, and SQLite persistence."
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.9",
+    "rich>=13.0",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+cred-engine = "cred_engine.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cred_engine"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "A", "C4"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.8",
+    "pytest>=8.0",
+    "ruff>=0.5",
+]

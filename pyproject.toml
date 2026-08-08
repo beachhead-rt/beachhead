@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beachhead"
+version = "0.1.0"
+description = "CLI/TUI Azure & Entra ID post-exploitation framework for authorized red team engagements."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    "textual>=0.80",   # TUI
+    "typer>=0.12",     # headless CLI (brings click + rich)
+    "rich>=13.7",      # shared console output
+    "httpx>=0.27",     # async Graph/ARM clients
+    "msal>=1.31",      # token acquisition/refresh (core/auth)
+    "pyyaml>=6.0",     # engagement scope config
+    "cryptography>=43.0",  # Fernet encryption for the credential store at rest
+    "cred-engine",     # credential scanning engine (patterns, scoring, entropy, verification)
+    "flask>=2.0",      # SpyGlass local ADO browser (contrib/spyglass.py)
+]
+
+[project.optional-dependencies]
+fast = [
+    "textual-fastdatatable>=0.14",  # Apache Arrow-backed DataTable for large result sets
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",         # mock httpx for Graph/ARM in tests
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "types-pyyaml",
+]
+
+# Headless CLI entry point. The TUI launches via `bh tui`.
+[project.scripts]
+bh = "beachhead.cli:app"
+
+# Modules are discovered via this entry-point group so adding a capability never
+# requires editing the CLI/TUI. See docs/module-authoring.md.
+# Example (uncomment once the module exists):
+[project.entry-points."beachhead.modules"]
+"enumerate.ado_pipelines" = "beachhead.modules.enumerate.ado_pipelines:AdoPipelines"
+"enumerate.ado_service_connections" = "beachhead.modules.enumerate.ado_service_connections:AdoServiceConnections"
+"enumerate.ado_agent_pools" = "beachhead.modules.enumerate.ado_agent_pools:AdoAgentPools"
+"enumerate.ado_variable_groups" = "beachhead.modules.enumerate.ado_variable_groups:AdoVariableGroups"
+"enumerate.ado_repos" = "beachhead.modules.enumerate.ado_repos:AdoRepos"
+"enumerate.ado_feeds" = "beachhead.modules.enumerate.ado_feeds:AdoFeeds"
+"enumerate.ado_permissions" = "beachhead.modules.enumerate.ado_permissions:AdoPermissions"
+"enumerate.ado_service_hooks" = "beachhead.modules.enumerate.ado_service_hooks:AdoServiceHooks"
+"enumerate.ado_extensions" = "beachhead.modules.enumerate.ado_extensions:AdoExtensions"
+"analyze.ado_attack_paths" = "beachhead.modules.analyze.ado_attack_paths:AdoAttackPaths"
+"analyze.discovered_credentials" = "beachhead.modules.analyze.discovered_credentials:DiscoveredCredentials"
+"analyze.collected_resources" = "beachhead.modules.analyze.collected_resources:CollectedResources"
+"harvest.ado_credential_scan" = "beachhead.modules.harvest.ado_credential_scan:AdoCredentialScan"
+"harvest.ado_wiki_scan" = "beachhead.modules.harvest.ado_wiki_scan:AdoWikiScan"
+"harvest.ado_pipeline_log_scan" = "beachhead.modules.harvest.ado_pipeline_log_scan:AdoPipelineLogScan"
+"harvest.ado_pr_scan" = "beachhead.modules.harvest.ado_pr_scan:AdoPrScan"
+"harvest.ado_variable_scan" = "beachhead.modules.harvest.ado_variable_scan:AdoVariableScan"
+"exploit.ado_pipeline_vardump" = "beachhead.modules.exploit.ado_pipeline_vardump:AdoPipelineVardump"
+"exploit.ado_yaml_pipeline_vardump" = "beachhead.modules.exploit.ado_yaml_pipeline_vardump:AdoYamlPipelineVardump"
+"exploit.ado_service_connection_extract" = "beachhead.modules.exploit.ado_service_connection_extract:AdoServiceConnectionExtract"
+
+[tool.uv.sources]
+cred-engine = { path = "packages/cred-engine", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/beachhead"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S"]
+# S101: allow asserts in tests (configured per-file below)
+[tool.ruff.lint.per-file-ignores]
+# S101: asserts. S105/S106: tests legitimately carry fake tokens/secrets as fixtures.
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["beachhead"]
+
+[[tool.mypy.overrides]]
+module = "msal"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
