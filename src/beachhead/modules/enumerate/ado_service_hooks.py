@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -50,6 +51,7 @@ class AdoServiceHooks:
             client = make_client(org, pat, ctx)
             try:
                 hooks = await client.list_service_hook_subscriptions()
+                hooks = ado_time_filter(hooks, ctx.since, "createdDate", "modifiedDate")
                 for hook in hooks:
                     if not isinstance(hook, dict):
                         continue

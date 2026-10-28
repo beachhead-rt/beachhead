@@ -23,6 +23,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -94,6 +95,7 @@ async def _enum_svc_org(  # noqa: C901
     findings = 0
     try:
         projects = await client.list_projects()
+        projects = ado_time_filter(projects, ctx.since, "lastUpdateTime")
         proj_list = [
             (p["name"], p.get("id", ""))
             for p in projects

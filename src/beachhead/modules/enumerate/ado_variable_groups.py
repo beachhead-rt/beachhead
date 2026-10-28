@@ -18,6 +18,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -73,6 +74,7 @@ class AdoVariableGroups:
                     if isinstance(result, BaseException):
                         continue
                     proj, groups = result
+                    groups = ado_time_filter(groups, ctx.since, "modifiedOn", "createdOn")
                     for vg in groups:
                         if not isinstance(vg, dict):
                             continue

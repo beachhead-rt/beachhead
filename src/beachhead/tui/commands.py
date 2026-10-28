@@ -24,6 +24,17 @@ _ACTION_COMMANDS: list[tuple[str, str, str]] = [
     ("refresh", "Refresh Current View", "Reload data from the store"),
 ]
 
+_TIME_FILTER_VIEWS = frozenset({"modules"})
+
+_TIME_FILTER_COMMANDS: list[tuple[str, str]] = [
+    ("time_filter_24h", "Time Filter: Last 24 hours"),
+    ("time_filter_7d", "Time Filter: Last 7 days"),
+    ("time_filter_30d", "Time Filter: Last 30 days"),
+    ("time_filter_this_month", "Time Filter: This month"),
+    ("time_filter_this_year", "Time Filter: This year"),
+    ("time_filter_clear", "Time Filter: All time"),
+]
+
 _FILTER_COMMANDS: dict[str, list[tuple[str, str]]] = {
     "findings": [
         ("filter_findings_clear", "Filter Findings: Clear filter"),
@@ -51,6 +62,9 @@ class BeachheadCommandProvider(Provider):
         if current in _FILTER_COMMANDS:
             for action_id, label in _FILTER_COMMANDS[current]:
                 yield DiscoveryHit(label, self._make_action(action_id))
+        if current in _TIME_FILTER_VIEWS:
+            for action_id, label in _TIME_FILTER_COMMANDS:
+                yield DiscoveryHit(label, self._make_action(action_id))
 
     async def search(self, query: str) -> Hits:
         query_lower = query.lower()
@@ -65,6 +79,11 @@ class BeachheadCommandProvider(Provider):
         current = self._current_view()
         if current in _FILTER_COMMANDS:
             for action_id, label in _FILTER_COMMANDS[current]:
+                score = _fuzzy_score(query_lower, label.lower())
+                if score > 0:
+                    yield Hit(score, label, self._make_action(action_id))
+        if current in _TIME_FILTER_VIEWS:
+            for action_id, label in _TIME_FILTER_COMMANDS:
                 score = _fuzzy_score(query_lower, label.lower())
                 if score > 0:
                     yield Hit(score, label, self._make_action(action_id))

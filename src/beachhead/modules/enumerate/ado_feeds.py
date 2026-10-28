@@ -16,6 +16,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -106,6 +107,7 @@ async def _enum_org_feeds(
     except Exception:  # noqa: BLE001
         projects = []
 
+    projects = ado_time_filter(projects, ctx.since, "lastUpdateTime")
     proj_names = [p["name"] for p in projects if isinstance(p, dict) and "name" in p]
 
     async def _get_proj_feeds(proj: str) -> tuple[str, list[Any]]:

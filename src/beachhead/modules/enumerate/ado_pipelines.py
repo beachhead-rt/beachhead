@@ -18,6 +18,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -97,6 +98,10 @@ async def _enum_project(ctx: RunContext, client: Any, org: str, project: str) ->
     yaml_pipelines = results[0] if isinstance(results[0], list) else []
     build_defs = results[1] if isinstance(results[1], list) else []
     release_defs = results[2] if isinstance(results[2], list) else []
+
+    yaml_pipelines = ado_time_filter(yaml_pipelines, ctx.since, "createdDate")
+    build_defs = ado_time_filter(build_defs, ctx.since, "createdDate")
+    release_defs = ado_time_filter(release_defs, ctx.since, "createdOn", "modifiedOn")
 
     for p in yaml_pipelines:
         if not isinstance(p, dict):

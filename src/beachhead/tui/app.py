@@ -25,7 +25,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import Button, ContentSwitcher, Footer, Input, Static, Tab, Tabs
+from textual.widgets import Button, ContentSwitcher, Footer, Input, Select, Static, Tab, Tabs
 
 from beachhead.core.errors import ConfigError, ConfigMissingError, StoreMissingError
 from beachhead.surface import SurfaceContext, open_surface
@@ -416,9 +416,22 @@ class BeachheadTUI(App[None]):
     # Command palette action dispatch
     # ------------------------------------------------------------------ #
 
+    _TIME_ACTION_MAP: dict[str, str] = {
+        "time_filter_24h": "24h",
+        "time_filter_7d": "7d",
+        "time_filter_30d": "30d",
+        "time_filter_this_month": "this-month",
+        "time_filter_this_year": "this-year",
+        "time_filter_clear": "all",
+    }
+
     def handle_command_action(self, action_id: str) -> None:
         if action_id == "refresh":
             self.action_refresh()
+            return
+
+        if action_id in self._TIME_ACTION_MAP:
+            self._apply_time_filter(self._TIME_ACTION_MAP[action_id])
             return
 
         if action_id == "filter_findings_clear":
@@ -427,6 +440,20 @@ class BeachheadTUI(App[None]):
             self._set_attack_path_filter(min_score=7.0)
         elif action_id == "filter_paths_clear":
             self._set_attack_path_filter(min_score=0.0)
+
+    def _apply_time_filter(self, value: str) -> None:
+        from textual.widgets import ContentSwitcher
+
+        try:
+            switcher = self.query_one("#main", ContentSwitcher)
+            current = switcher.current
+            if not current:
+                return
+            view = self.query_one(f"#{current}")
+            select = view.query_one("#time-filter", Select)
+            select.value = value
+        except Exception:  # noqa: BLE001
+            _log.debug("time filter failed", exc_info=True)
 
     def _apply_view_filter(self, view_id: str, value: str) -> None:
         self.action_show(view_id)

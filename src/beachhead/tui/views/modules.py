@@ -31,6 +31,7 @@ from textual.worker import Worker, WorkerState
 
 from beachhead.core.loader import ModuleRegistry, load_modules
 from beachhead.core.module import Module, Phase
+from beachhead.core.timefilter import TIME_PRESETS, parse_since
 
 
 class ModulesView(Vertical):
@@ -78,6 +79,9 @@ class ModulesView(Vertical):
         height: 1;
         color: $text-muted;
     }
+    #time-filter {
+        margin: 0 0 1 0;
+    }
     #mod-output {
         height: 1fr;
         border: solid $primary;
@@ -123,6 +127,10 @@ class ModulesView(Vertical):
                 yield VerticalScroll(id="mod-catalog")
             with Vertical(id="mod-detail"):
                 yield Static("", id="mod-info")
+                yield Select[str](
+                    TIME_PRESETS, value="all", allow_blank=False,
+                    id="time-filter",
+                )
                 with Vertical(id="mod-vardump-params"):
                     yield Checkbox(
                         "Secrets only", value=True,
@@ -151,6 +159,17 @@ class ModulesView(Vertical):
                     yield Button("▶ Run", id="btn-run", variant="warning", disabled=True)
                 yield Static("", id="mod-status")
                 yield RichLog(id="mod-output", highlight=True, markup=True)
+
+    @property
+    def _since_value(self):
+        try:
+            sel = self.query_one("#time-filter", Select)
+            v = sel.value
+            if v == Select.BLANK:
+                return None
+            return parse_since(str(v))
+        except Exception:  # noqa: BLE001
+            return None
 
     def on_mount(self) -> None:
         self._registry = load_modules()
@@ -254,6 +273,7 @@ class ModulesView(Vertical):
         confirm_btn = self.query_one("#btn-confirm", Button)
         search_btn = self.query_one("#btn-search", Button)
         params = self.query_one("#mod-vardump-params")
+        time_filter = self.query_one("#time-filter", Select)
 
         if self._selected is None:
             run_btn.disabled = True
@@ -261,7 +281,15 @@ class ModulesView(Vertical):
             confirm_btn.display = False
             search_btn.display = False
             params.display = False
+            time_filter.display = False
             return
+
+        is_analyze = (
+            self._is_discovered_creds
+            or self._is_collected_resources
+            or self._is_ado_attack_paths
+        )
+        time_filter.display = not is_analyze
 
         if self._is_discovered_creds or self._is_collected_resources:
             search_btn.display = False
@@ -683,6 +711,8 @@ class ModulesView(Vertical):
         except Exception as exc:  # noqa: BLE001
             return f"[red]Bootstrap failed: {exc}[/]"
 
+        env.since = self._since_value
+
         pipelines: list[dict[str, Any]] = []
         kind = "YAML" if yaml_mode else "classic"
 
@@ -744,6 +774,8 @@ class ModulesView(Vertical):
             )
         except Exception as exc:  # noqa: BLE001
             return f"[red]Bootstrap failed: {exc}[/]"
+
+        env.since = self._since_value
 
         result_data: dict[str, list[dict[str, Any]]] = {}
 
@@ -893,6 +925,7 @@ class ModulesView(Vertical):
             )
         except Exception as exc:  # noqa: BLE001
             return f"[red]Bootstrap failed: {exc}[/]"
+        env.since = self._since_value
         confirm_gate = self._tui_confirm if mod.meta.gated else None
         try:
             result = await run_module(mod, env, confirm=confirm_gate, prompt=self._tui_prompt)

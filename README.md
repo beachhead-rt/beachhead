@@ -28,7 +28,8 @@ Beachhead is a CLI- and TUI-first framework built for one job: **what to do once
 - **Credential harvesting**: cred-engine-powered secret detection (59 patterns) across repos, wikis, build logs, work items, PR comments, and pipeline variables
 - **Attack path analysis**: 9 offline attack-path types derived from collected data (service connection lateral movement, Key Vault access, self-hosted agent execution, credential exposure, branch policy bypass, feed poisoning, permission escalation, service hook exfiltration, extension privilege abuse)
 - **Exploitation**: classic and YAML pipeline variable dump with log-masking bypass, service connection credential extraction (Azure RM SP + Docker Registry), retention lease release, `--confirm` gate, and automatic artifact cleanup
-- **Textual TUI**: 8 views (Dashboard, Modules, Runs, Resources, Paths, Findings, Credentials, Audit) with command palette (Ctrl+P), drill-down detail screens, module search, and reactive engagement bar
+- **Time-based filtering**: `--since` flag on CLI commands and time-filter dropdown in the TUI Modules view; all enumerate, harvest, and exploit modules filter ADO projects and repos by recent activity, reducing noise and API calls during time-scoped engagements
+- **Textual TUI**: 8 views (Dashboard, Modules, Runs, Resources, Paths, Findings, Credentials, Audit) with command palette (Ctrl+P), drill-down detail screens, module search, time-filter dropdown, and reactive engagement bar
 - **Headless CLI**: full parity with the TUI for scripting; `bh modules` lists all registered modules
 - **SQLite datastore**: the contract between modules and surfaces; collection and analysis are decoupled and reproducible offline
 - **OPSEC by design**: scope guardrail, rate limiting with jitter, append-only audit log, artifact cleanup with teardown gate
@@ -174,7 +175,7 @@ bh tui
 Key features:
 - **Command palette** (Ctrl+P): fuzzy search for views, actions, and filters
 - **Drill-down**: Enter on attack paths or findings opens detail screens with actionable next steps
-- **Module runner**: run modules directly from the TUI with streaming output
+- **Module runner**: run modules directly from the TUI with streaming output and time-filter dropdown (24h / 7d / 30d / this month / this year)
 - **Engagement bar**: persistent status showing engagement name, ADO orgs, window, run count, cleanup state
 - **Live refresh**: views reload on tab switch; dashboard updates after module runs
 - **Keyboard navigation**: `1`-`8` switch views, `r` refreshes, `t` toggles tabs, `q` quits
@@ -199,6 +200,10 @@ bh exploit list
 bh enumerate run ado_pipelines
 bh harvest run ado_credential_scan
 bh analyze run ado_attack_paths
+
+# Run with a time filter (only projects/repos active since the cutoff)
+bh enumerate run ado_pipelines --since 7d
+bh harvest run ado_credential_scan --since 30d
 
 # Run all modules in a phase
 bh enumerate run-all
@@ -234,6 +239,7 @@ bh engage teardown     # verify cleanup queue empty (fails if pending artifacts)
 |---|---|---|
 | `--store`, `-s` | `BEACHHEAD_STORE` | Path to the SQLite store (default: `./beachhead.sqlite`) |
 | `--config`, `-c` | | Path to engagement config (else env/default) |
+| `--since` | | Time filter for module runs: `24h`, `7d`, `30d`, `this-month`, `this-year`, or ISO datetime |
 | `--version` | | Show version and exit |
 
 ---
@@ -323,6 +329,7 @@ src/beachhead/
     loader.py      # module registry via entry-point discovery
     runner.py      # module execution orchestrator
     boot.py        # full client/store wiring for module runs
+    timefilter.py  # --since / time-filter parsing and row filtering
     errors.py      # typed error hierarchy
   modules/         # post-ex operations; each implements the common module interface
     enumerate/     # ADO resource discovery                              [read]

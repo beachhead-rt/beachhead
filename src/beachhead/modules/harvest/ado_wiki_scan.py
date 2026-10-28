@@ -24,6 +24,7 @@ from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
     HTML_TAG_RE,
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -95,11 +96,17 @@ class AdoWikiScan:
         total_findings = 0
         total_pages_scanned = 0
 
+        if ctx.since:
+            ctx.console.print(
+                "[dim]Time filter active — limiting to recently updated projects[/]"
+            )
+
         for org in sorted(orgs):
             ctx.console.print(f"[bold]Wiki scan: {org}[/]")
             client = make_client(org, pat, ctx)
             try:
                 projects = await client.list_projects()
+                projects = ado_time_filter(projects, ctx.since, "lastUpdateTime")
                 proj_names = [
                     p["name"] for p in projects if isinstance(p, dict) and "name" in p
                 ]

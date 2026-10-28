@@ -21,6 +21,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -192,6 +193,12 @@ async def _run_org(
     ctx.console.print(f"[bold]Enumerating permissions: {org}[/]")
     client = make_client(org, pat, ctx)
     try:
+        if ctx.since:
+            projects = await client.list_projects()
+            active = ado_time_filter(projects, ctx.since, "lastUpdateTime")
+            if not active:
+                ctx.console.print(f"  [dim]No recently updated projects in {org} — skipping[/]")
+                return 0, 0
         return await _enum_org(ctx, client, org)
     finally:
         await client.close()

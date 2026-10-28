@@ -13,6 +13,7 @@ from typing import Any
 from beachhead.core.errors import ApiError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -67,6 +68,7 @@ class AdoExtensions:
                         )
                         continue
                     raise
+                extensions = ado_time_filter(extensions, ctx.since, "lastPublished")
                 for ext in extensions:
                     if not isinstance(ext, dict):
                         continue

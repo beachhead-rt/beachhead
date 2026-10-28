@@ -28,6 +28,7 @@ from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
     HTML_TAG_RE,
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -78,12 +79,19 @@ class AdoCredentialScan:
 
         total_findings = 0
         total_repos = 0
+        since_iso = ctx.since.isoformat() if ctx.since else None
+        if since_iso:
+            ctx.console.print(
+                "[dim]Time filter active — skipping repos with no pushes "
+                "since cutoff (code search has no timestamps)[/]"
+            )
 
         for org in sorted(orgs):
             ctx.console.print(f"[bold]Credential scan: {org}[/]")
             client = make_client(org, pat, ctx)
             try:
                 projects = await client.list_projects()
+                projects = ado_time_filter(projects, ctx.since, "lastUpdateTime")
                 proj_names = [
                     p["name"] for p in projects if isinstance(p, dict) and "name" in p
                 ]
@@ -93,6 +101,8 @@ class AdoCredentialScan:
 
                 for proj in proj_names:
                     repos = await _list_repos(client, proj)
+                    if since_iso:
+                        repos = await _filter_active_repos(client, proj, repos, since_iso)
                     total_repos += len(repos)
                     ctx.console.print(f"  {proj}: {len(repos)} repo(s)")
 
@@ -139,6 +149,21 @@ async def _list_repos(client: Any, project: str) -> list[dict[str, Any]]:
     except Exception:  # noqa: BLE001
         return []
     return [r for r in repos if isinstance(r, dict) and r.get("name")]
+
+
+async def _filter_active_repos(
+    client: Any, project: str, repos: list[dict[str, Any]], since_iso: str,
+) -> list[dict[str, Any]]:
+    """Keep only repos that have at least one push since the cutoff."""
+    active: list[dict[str, Any]] = []
+    for repo in repos:
+        repo_id = repo.get("id")
+        if not repo_id:
+            active.append(repo)
+            continue
+        if await client.has_recent_pushes(project, repo_id, since=since_iso):
+            active.append(repo)
+    return active
 
 
 async def _scan_repo(

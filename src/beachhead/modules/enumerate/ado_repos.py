@@ -15,6 +15,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -216,6 +217,7 @@ async def _enum_project(
             raise
         except Exception:  # noqa: BLE001
             return []
+        prs = ado_time_filter(prs, ctx.since, "creationDate", "closedDate")
         no_review: list[dict[str, Any]] = []
         for pr in prs:
             if not isinstance(pr, dict):

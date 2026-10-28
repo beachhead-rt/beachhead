@@ -20,6 +20,7 @@ from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
     HTML_TAG_RE,
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -112,6 +113,7 @@ async def _scan_project_prs(
             return 0, 0
 
         valid_prs = [p for p in prs if isinstance(p, dict) and p.get("pullRequestId")]
+        valid_prs = ado_time_filter(valid_prs, ctx.since, "creationDate", "closedDate")
 
         async def _fetch_threads(pr: dict[str, Any]) -> tuple[int, list[Any]]:
             pr_id = pr["pullRequestId"]

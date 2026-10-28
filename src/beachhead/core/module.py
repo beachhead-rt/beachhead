@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -321,6 +322,7 @@ class RunContext:
     operator: str
     auth: TokenProvider | None = None
     secrets: SecretStoreAccess | None = None
+    since: datetime | None = None
 
 
 # --------------------------------------------------------------------------- #

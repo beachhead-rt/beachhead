@@ -15,6 +15,7 @@ import typer
 from beachhead.cli.common import console, emit_error
 from beachhead.core.loader import ModuleRegistry, load_modules
 from beachhead.core.module import Phase
+from beachhead.core.timefilter import SINCE_HELP, parse_since
 
 __all__ = ["make_phase_app", "modules_command"]
 
@@ -125,6 +126,9 @@ def make_phase_app(phase: str) -> typer.Typer:
         confirm: bool = typer.Option(
             False, "--confirm", help="Confirm execution of gated (write/manual) operations."
         ),
+        since: str | None = typer.Option(
+            None, "--since", help=SINCE_HELP,
+        ),
     ) -> None:
         """Run a module."""
         reg = _get_registry()
@@ -155,13 +159,16 @@ def make_phase_app(phase: str) -> typer.Typer:
         opts = ctx.obj
         console.print(f"[bold]Running {module_name}[/]")
 
-        asyncio.run(_execute(mod, opts, confirmed=confirm))
+        asyncio.run(_execute(mod, opts, confirmed=confirm, since=parse_since(since) if since else None))
 
     @app.command("run-all")
     def run_all_cmd(
         ctx: typer.Context,
         confirm: bool = typer.Option(
             False, "--confirm", help="Confirm execution of gated (write/manual) operations."
+        ),
+        since: str | None = typer.Option(
+            None, "--since", help=SINCE_HELP,
         ),
     ) -> None:
         """Run all modules in this phase sequentially."""
@@ -173,7 +180,7 @@ def make_phase_app(phase: str) -> typer.Typer:
 
         opts = ctx.obj
         console.print(f"[bold]Running all {len(mods)} {phase} module(s)[/]")
-        asyncio.run(_execute_all(mods, opts, confirmed=confirm))
+        asyncio.run(_execute_all(mods, opts, confirmed=confirm, since=parse_since(since) if since else None))
 
     return app
 
@@ -199,7 +206,7 @@ def _cli_passphrase() -> str | None:
         return None
 
 
-async def _execute(mod: object, opts: object, *, confirmed: bool) -> None:
+async def _execute(mod: object, opts: object, *, confirmed: bool, since: object = None) -> None:
     from beachhead.cli.common import CliOptions
     from beachhead.core.boot import bootstrap_run_env
     from beachhead.core.errors import (
@@ -228,6 +235,7 @@ async def _execute(mod: object, opts: object, *, confirmed: bool) -> None:
     except BeachheadError as exc:
         console.print(f"[red]Error:[/] {exc}")
         raise typer.Exit(1) from exc
+    env.since = since  # type: ignore[assignment]
     confirm_gate = _cli_confirm if confirmed else None
     try:
         result = await run_module(mod, env, confirm=confirm_gate)  # type: ignore[arg-type]
@@ -249,7 +257,7 @@ async def _execute(mod: object, opts: object, *, confirmed: bool) -> None:
 
 
 async def _execute_all(
-    mods: Sequence[object], opts: object, *, confirmed: bool
+    mods: Sequence[object], opts: object, *, confirmed: bool, since: object = None
 ) -> None:
     from beachhead.cli.common import CliOptions
     from beachhead.core.boot import bootstrap_run_env
@@ -272,6 +280,7 @@ async def _execute_all(
     except BeachheadError as exc:
         console.print(f"[red]Error:[/] {exc}")
         raise typer.Exit(1) from exc
+    env.since = since  # type: ignore[assignment]
     confirm_gate = _cli_confirm if confirmed else None
     passed = 0
     failed = 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from datetime import datetime, timezone
 
 from beachhead.core.clients.ado_search import AdoSearchClient
 from beachhead.core.errors import AuthError
@@ -62,3 +63,36 @@ def make_client(org: str, pat: str, ctx: RunContext) -> AdoSearchClient:
         audit=ctx.audit,
         run_id=ctx.run_id,
     )
+
+
+def ado_time_filter(
+    items: list[dict], since: datetime | None, *fields: str,
+) -> list[dict]:
+    """Filter ADO API dicts by timestamp fields against a cutoff.
+
+    Keeps items where *any* of ``fields`` parses to a datetime >= ``since``.
+    Items with no parseable timestamp field are kept (safe default).
+    """
+    if since is None or not fields:
+        return items
+    out: list[dict] = []
+    for item in items:
+        has_date = False
+        keep = False
+        for f in fields:
+            raw = item.get(f)
+            if raw is None:
+                continue
+            try:
+                ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                has_date = True
+                if ts >= since:
+                    keep = True
+                    break
+            except (ValueError, TypeError):
+                continue
+        if keep or not has_date:
+            out.append(item)
+    return out

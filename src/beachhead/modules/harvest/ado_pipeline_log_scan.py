@@ -20,6 +20,7 @@ from beachhead.core.cred_bridge import scan_and_record
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -72,6 +73,7 @@ class AdoPipelineLogScan:
                         b for b in builds
                         if isinstance(b, dict) and b.get("id") is not None
                     ]
+                    valid = ado_time_filter(valid, ctx.since, "finishTime", "queueTime")
                     results = await asyncio.gather(
                         *(_scan_build(ctx, client, org, proj, b) for b in valid),
                         return_exceptions=True,

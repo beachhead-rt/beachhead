@@ -15,6 +15,7 @@ from typing import Any
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -64,6 +65,7 @@ class AdoAgentPools:
             client = make_client(org, pat, ctx)
             try:
                 pools = await client.list_agent_pools()
+                pools = ado_time_filter(pools, ctx.since, "createdOn")
 
                 for pool in pools:
                     if not isinstance(pool, dict):

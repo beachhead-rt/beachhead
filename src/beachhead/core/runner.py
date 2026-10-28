@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import traceback
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from rich.console import Console
@@ -47,6 +48,7 @@ class RunEnv:
     console: Console
     operator: str
     secrets: SecretStoreAccess | None = None
+    since: datetime | None = None
 
 
 async def _default_confirm(prompt: str, *, dangerous: bool = False) -> bool:
@@ -107,6 +109,7 @@ async def run_module(
         operator=env.operator,
         auth=env.auth,
         secrets=env.secrets,
+        since=env.since,
     )
 
     def _finish(status: str) -> None:

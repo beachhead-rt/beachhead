@@ -16,6 +16,7 @@ from beachhead.cli.common import (
     load_surface,
 )
 from beachhead.core.store.rows import Run
+from beachhead.core.timefilter import SINCE_HELP, filter_by_time, parse_since
 from beachhead.surface import format_duration
 
 
@@ -84,6 +85,7 @@ def status(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> N
 def runs(
     ctx: typer.Context,
     run: str | None = typer.Option(None, "--run", help="Show one run + its audit."),
+    since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Run history. (bh runs, bh runs --run ID)"""
@@ -116,6 +118,8 @@ def runs(
             )
             return
         rows = fetch(json_, sc.store.runs)
+        cutoff = parse_since(since) if since else None
+        rows = filter_by_time(rows, cutoff, "started_at")
         dicts = [_run_dict(r) for r in rows]
         if json_:
             emit_json("runs", dicts)
@@ -132,12 +136,15 @@ def resources(
     ctx: typer.Context,
     type_: str | None = typer.Option(None, "--type", help="Filter by resource type."),
     search: str | None = typer.Option(None, "--search", help="Substring on name or resource_id."),
+    since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Collected resources. (bh resources, bh resources --type ado_extension)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
         rows = fetch(json_, sc.store.resources)
+        cutoff = parse_since(since) if since else None
+        rows = filter_by_time(rows, cutoff, "collected_at")
         if type_ is not None:
             needle = type_.lower()
             rows = [r for r in rows if needle in r.type.lower()]
@@ -177,11 +184,17 @@ def resources(
         sc.store.close()
 
 
-def paths(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> None:
+def paths(
+    ctx: typer.Context,
+    since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
     """Attack paths. (bh paths, bh paths --json)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
         rows = fetch(json_, sc.store.attack_paths)
+        cutoff = parse_since(since) if since else None
+        rows = filter_by_time(rows, cutoff, "collected_at")
         dicts = [asdict(p) for p in rows]
         if json_:
             emit_json("attack_paths", dicts)
@@ -207,12 +220,15 @@ def paths(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> No
 def findings(
     ctx: typer.Context,
     kind: str | None = typer.Option(None, "--kind", help="Filter by finding kind."),
+    since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Collected findings. (bh findings, bh findings --kind ado_credential)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
         rows = fetch(json_, lambda: sc.store.findings(kind=kind))
+        cutoff = parse_since(since) if since else None
+        rows = filter_by_time(rows, cutoff, "collected_at")
         dicts = [asdict(f) for f in rows]
         for d in dicts:
             details = d.get("details") or {}
@@ -278,12 +294,15 @@ def findings(
 def audit(
     ctx: typer.Context,
     run: str | None = typer.Option(None, "--run", help="Filter by run id."),
+    since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Append-only audit log. (bh audit, bh audit --run ID)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
         rows = fetch(json_, lambda: sc.store.audit_entries(run_id=run))
+        cutoff = parse_since(since) if since else None
+        rows = filter_by_time(rows, cutoff, "ts")
         dicts = [asdict(a) for a in rows]
         if json_:
             emit_json("audit", dicts)

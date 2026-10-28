@@ -965,6 +965,31 @@ class AdoSearchClient:
         )
         return data.get("value", []) if isinstance(data, dict) else []
 
+    async def has_recent_pushes(
+        self, project: str, repository_id: str, *, since: str,
+    ) -> bool:
+        """Return True if the repo has at least one push since *since* (ISO 8601)."""
+        self._scope.check(self._org, kind="ado")
+        self._safe(project, "project")
+        url = (
+            f"{_REST_BASE}/{self._org}/{project}"
+            f"/_apis/git/repositories/{repository_id}/pushes"
+        )
+        try:
+            data = await self._get(
+                url,
+                params={
+                    "api-version": _API_VERSION,
+                    "searchCriteria.fromDate": since,
+                    "$top": "1",
+                },
+                audit_action="ado.pushes",
+            )
+        except Exception:  # noqa: BLE001
+            return True
+        items = data.get("value", []) if isinstance(data, dict) else []
+        return len(items) > 0
+
     async def get_variable_group(self, project: str, group_id: int) -> dict[str, Any]:
         """GET a specific variable group by ID."""
         self._scope.check(self._org, kind="ado")

@@ -42,7 +42,8 @@ class RunsView(Vertical):
     def reload(self) -> None:
         table = self.query_one("#runs-table", DataTable)
         table.clear()
-        for run in self._store.runs():
+        runs = self._store.runs()
+        for run in runs:
             table.add_row(
                 run.module,
                 run.phase,

@@ -19,6 +19,7 @@ from beachhead.core.cred_bridge import classify_variable
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
+    ado_time_filter,
     get_orgs,
     get_pat,
     make_client,
@@ -115,6 +116,10 @@ async def _scan_project_variables(
     groups = results[0] if isinstance(results[0], list) else []
     build_defs = results[1] if isinstance(results[1], list) else []
     release_defs = results[2] if isinstance(results[2], list) else []
+
+    groups = ado_time_filter(groups, ctx.since, "modifiedOn", "createdOn")
+    build_defs = ado_time_filter(build_defs, ctx.since, "createdDate")
+    release_defs = ado_time_filter(release_defs, ctx.since, "createdOn", "modifiedOn")
 
     # --- Variable groups ---
     for group in groups:
