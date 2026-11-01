@@ -47,6 +47,7 @@ class EngagementConfig:
     resource_scopes: tuple[str, ...]
     ado_organizations: frozenset[str]
     allow_write: bool
+    custom_search_terms: tuple[str, ...] = ()
     window_explicit: bool = False
 
     @cached_property
@@ -142,6 +143,8 @@ def _build(raw: Mapping[str, Any]) -> EngagementConfig:
     if not isinstance(authorization_ref, str):
         raise ConfigError("authorization_ref must be a string")
 
+    custom_search_terms = _str_tuple(raw.get("custom_search_terms"), "custom_search_terms")
+
     return EngagementConfig(
         engagement=_req_str(raw, "engagement"),
         authorization_ref=authorization_ref,
@@ -153,6 +156,7 @@ def _build(raw: Mapping[str, Any]) -> EngagementConfig:
         resource_scopes=resource_scopes,
         ado_organizations=ado_organizations,
         allow_write=allow_write,
+        custom_search_terms=custom_search_terms,
         window_explicit=window_explicit,
     )
 
@@ -211,6 +215,7 @@ class _BootstrapData:
     subscriptions: list[str] | None = None
     resource_scopes: list[str] | None = None
     ado_organizations: list[str] | None = None
+    custom_search_terms: list[str] | None = None
     window_days: int = 90
 
 
@@ -343,6 +348,17 @@ def _bootstrap_interactive(resolved: Path) -> Path:
     con.print("  [dim]Number of days from today the engagement is authorized.[/]")
     data.window_days = _prompt_int(con, "Window (days)", default=90)
 
+    # -- Custom search terms (optional) --
+    con.print()
+    con.print(Rule("[bold]Custom Search Terms[/]", style="cyan"))
+    con.print("  [dim]Extra terms for the cred-engine (e.g. project-specific service names).[/]")
+    con.print("  [dim]Leave blank to skip — you can add them later.[/]")
+    data.custom_search_terms = _prompt_list(
+        con, "Search terms",
+        hint="comma-separated, e.g. [known-secret-value], sqladmin, api-key, prod-key",
+        required=False,
+    )
+
     # -- Review + confirm --
     con.print()
     con.print(Rule("[bold]Review[/]", style="green"))
@@ -353,6 +369,8 @@ def _bootstrap_interactive(resolved: Path) -> Path:
     if data.ado_organizations:
         con.print(f"  [bold]ADO orgs[/]      {', '.join(data.ado_organizations)}")
     con.print(f"  [bold]Window[/]        {data.window_days} days from now")
+    if data.custom_search_terms:
+        con.print(f"  [bold]Search terms[/]  {', '.join(data.custom_search_terms)}")
     if data.tenants or data.subscriptions or data.management_groups or data.resource_scopes:
         azure_parts: list[str] = []
         if data.tenants:
@@ -398,6 +416,8 @@ def _render_config(data: _BootstrapData) -> str:
         config["subscriptions"] = data.subscriptions
     if data.resource_scopes:
         config["resource_scopes"] = data.resource_scopes
+
+    config["custom_search_terms"] = data.custom_search_terms or []
 
     header = "# Beachhead engagement scope config\n# See docs/opsec-and-scope.md for all options.\n"
     return header + yaml.dump(config, default_flow_style=False, sort_keys=False)

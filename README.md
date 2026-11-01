@@ -28,8 +28,10 @@ Beachhead is a CLI- and TUI-first framework built for one job: **what to do once
 - **Credential harvesting**: cred-engine-powered secret detection (59 patterns) across repos, wikis, build logs, work items, PR comments, and pipeline variables
 - **Attack path analysis**: 9 offline attack-path types derived from collected data (service connection lateral movement, Key Vault access, self-hosted agent execution, credential exposure, branch policy bypass, feed poisoning, permission escalation, service hook exfiltration, extension privilege abuse)
 - **Exploitation**: classic and YAML pipeline variable dump with log-masking bypass, service connection credential extraction (Azure RM SP + Docker Registry), retention lease release, `--confirm` gate, and automatic artifact cleanup
+- **Custom search terms**: operator-supplied terms in `engagement.local.yaml` expand the cred-engine search surface; matches compound identifiers (e.g. `demo` catches `DEMO_API_KEY = ...`). Configurable during engagement setup (CLI and TUI) or at any time via the TUI dashboard Search Terms button
+- **False-positive triage**: mark findings, attack paths, and credentials as false positives via CLI (`bh dismiss` / `bh restore`) or TUI (`f` to toggle, `a` to show/hide). Auto-suppresses attack paths when all source findings are FP. Triage state is preserved across re-runs
 - **Time-based filtering**: `--since` flag on CLI commands and time-filter dropdown in the TUI Modules view; all enumerate, harvest, and exploit modules filter ADO projects and repos by recent activity, reducing noise and API calls during time-scoped engagements
-- **Textual TUI**: 8 views (Dashboard, Modules, Runs, Resources, Paths, Findings, Credentials, Audit) with command palette (Ctrl+P), drill-down detail screens, module search, time-filter dropdown, and reactive engagement bar
+- **Textual TUI**: 8 views (Dashboard, Modules, Runs, Resources, Paths, Findings, Credentials, Audit) with command palette (Ctrl+P), drill-down detail screens, module search, time-filter dropdown, search term editor, false-positive triage, and reactive engagement bar
 - **Headless CLI**: full parity with the TUI for scripting; `bh modules` lists all registered modules
 - **SQLite datastore**: the contract between modules and surfaces; collection and analysis are decoupled and reproducible offline
 - **OPSEC by design**: scope guardrail, rate limiting with jitter, append-only audit log, artifact cleanup with teardown gate
@@ -49,7 +51,7 @@ Beachhead is a CLI- and TUI-first framework built for one job: **what to do once
 
 ```bash
 # Clone the repository
-git clone <repo-url> beachhead
+git clone https://github.com/beachhead-rt/beachhead.git
 cd beachhead
 
 # Install all dependencies
@@ -107,7 +109,10 @@ window:
   start: 2026-04-15T00:00:00Z
   end:   2026-04-30T23:59:59Z
 ado_organizations: ["acme-eng"]
+custom_search_terms: ["sqladmin", "api-key", "prod-key"]
 ```
+
+`custom_search_terms` is optional. When set, terms are fed into the cred-engine pipeline as additional search patterns and ADO Code Search queries. Terms match compound identifiers (e.g. `api-key` catches `DEMO_API_KEY`). You can also add them later via `bh tui` (Dashboard > Search Terms) or by editing the config YAML directly.
 
 **No scope config = refuses to run.** There is no "no-scope" mode.
 
@@ -163,7 +168,7 @@ bh tui
 
 | # | View | Content |
 |---|------|---------|
-| 1 | Dashboard | Stats panel, teardown readiness, recent runs |
+| 1 | Dashboard | Stats panel, search term editor, export, teardown, recent runs |
 | 2 | Modules | Searchable catalog, run button with live output |
 | 3 | Runs | Run history |
 | 4 | Resources | Collected ADO resources |
@@ -178,6 +183,8 @@ Key features:
 - **Module runner**: run modules directly from the TUI with streaming output and time-filter dropdown (24h / 7d / 30d / this month / this year)
 - **Engagement bar**: persistent status showing engagement name, ADO orgs, window, run count, cleanup state
 - **Live refresh**: views reload on tab switch; dashboard updates after module runs
+- **False-positive triage**: `f` toggles false-positive on the selected row, `a` shows/hides dismissed items (findings, paths, credentials)
+- **Search term editor**: Dashboard > Search Terms button opens a modal to edit custom cred-engine search terms (persisted to config YAML)
 - **Keyboard navigation**: `1`-`8` switch views, `r` refreshes, `t` toggles tabs, `q` quits
 
 ### Headless CLI
@@ -218,12 +225,24 @@ bh exploit run ado_service_connection_extract --confirm
 
 ```bash
 bh status              # engagement summary
-bh paths               # derived attack paths
-bh findings            # collection findings (--kind, --severity)
+bh paths               # derived attack paths (--all includes false positives)
+bh findings            # collection findings (--kind, --severity, --all)
 bh audit               # append-only audit log (--run <id> to filter)
 ```
 
 All read commands support `--json` for structured output.
+
+#### False-positive triage
+
+```bash
+# Mark a finding, attack path, or credential as a false positive
+bh dismiss <id>
+
+# Restore a previously dismissed item
+bh restore <id>
+```
+
+Both commands auto-detect the item type (finding, attack path, or credential). Dismissing all source findings for an attack path auto-suppresses that path.
 
 #### Engagement lifecycle
 

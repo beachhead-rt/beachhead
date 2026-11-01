@@ -36,7 +36,7 @@ class EngagementSetupScreen(ModalScreen[bool]):
     #engage-dialog {
         width: 76;
         height: auto;
-        max-height: 36;
+        max-height: 44;
         border: thick $accent;
         padding: 1 2;
     }
@@ -83,6 +83,12 @@ class EngagementSetupScreen(ModalScreen[bool]):
 
             yield Static("Testing window [dim](days)[/]")
             yield Input(placeholder="90", id="engage-window-days")
+
+            yield Static("Custom search terms [dim](optional, comma-separated)[/]")
+            yield Input(
+                placeholder="e.g. [known-secret-value], sqladmin, api-key, prod-key",
+                id="engage-search-terms",
+            )
 
             yield Static("ADO PAT")
             yield Input(placeholder="paste PAT", password=True, id="engage-pat")
@@ -174,10 +180,14 @@ class EngagementSetupScreen(ModalScreen[bool]):
             status.update("[red]Window days must be a positive number.[/]")
             return
 
+        terms_raw = self.query_one("#engage-search-terms", Input).value.strip()
+        search_terms = [t.strip() for t in terms_raw.split(",") if t.strip()] or None
+
         data = _BootstrapData(
             engagement=name,
             authorization_ref=auth_ref,
             ado_organizations=[org],
+            custom_search_terms=search_terms,
             window_days=window_days,
         )
 

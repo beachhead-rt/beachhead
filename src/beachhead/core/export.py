@@ -70,8 +70,8 @@ def build_report(
         engagement=store.get_engagement(),
         summary=store.summary(),
         runs=store.runs(),
-        findings=store.findings(),
-        attack_paths=store.attack_paths(),
+        findings=store.findings(),  # excludes false positives by default
+        attack_paths=store.attack_paths(),  # excludes false positives by default
         audit_entries=store.audit_entries(),
         metadata=metadata or {},
         credentials=credentials,

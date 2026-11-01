@@ -10,7 +10,7 @@ from __future__ import annotations
 import typer
 
 from beachhead import __version__
-from beachhead.cli import _read
+from beachhead.cli import _read, _triage
 from beachhead.cli._auth import auth_app
 from beachhead.cli._banner import print_banner
 from beachhead.cli._completion import ensure_completion
@@ -73,6 +73,10 @@ app.command("findings")(_read.findings)
 app.command("audit")(_read.audit)
 app.command("tui")(_read.tui)
 app.command("modules")(modules_command)
+
+# Triage commands.
+app.command("dismiss")(_triage.dismiss)
+app.command("restore")(_triage.restore)
 
 
 if __name__ == "__main__":  # pragma: no cover

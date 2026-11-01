@@ -35,7 +35,12 @@ from beachhead.modules.enumerate._ado_common import (
     no_orgs_result,
     no_pat_result,
 )
-from beachhead.modules.harvest.cred_patterns import SCAN_QUERIES, looks_like_credential
+from beachhead.modules.harvest.cred_patterns import (
+    SCAN_QUERIES,
+    build_custom_patterns,
+    build_custom_queries,
+    looks_like_credential,
+)
 
 _ADO_WEB_BASE = "https://dev.azure.com"
 _MAX_SNIPPET_FETCHES_PER_REPO = 50
@@ -77,6 +82,14 @@ class AdoCredentialScan:
         if not orgs:
             return no_orgs_result(ctx)
 
+        custom_terms: tuple[str, ...] = getattr(ctx.config, "custom_search_terms", ())
+        custom_pats = build_custom_patterns(custom_terms) if custom_terms else None
+        custom_queries = build_custom_queries(custom_terms)
+        if custom_terms:
+            ctx.console.print(
+                f"[dim]Custom search terms active: {len(custom_terms)} term(s)[/]"
+            )
+
         total_findings = 0
         total_repos = 0
         since_iso = ctx.since.isoformat() if ctx.since else None
@@ -117,9 +130,15 @@ class AdoCredentialScan:
                         total_findings += await _scan_repo(
                             ctx, client, org, proj, repo_name,
                             default_branch=default_branch,
+                            extra_patterns=custom_pats,
+                            extra_queries=custom_queries,
                         )
 
-                total_findings += await _scan_work_items(ctx, client, org, proj_names)
+                total_findings += await _scan_work_items(
+                    ctx, client, org, proj_names,
+                    extra_terms=list(custom_terms),
+                    extra_patterns=custom_pats,
+                )
 
             finally:
                 await client.close()
@@ -174,6 +193,8 @@ async def _scan_repo(
     repo_name: str,
     *,
     default_branch: str = "main",
+    extra_patterns: list[Any] | None = None,
+    extra_queries: list[Any] | None = None,
 ) -> int:
     findings = 0
 
@@ -181,6 +202,7 @@ async def _scan_repo(
     tree_findings, tree_fetches, tree_ok = await _scan_repo_tree(
         ctx, client, org, project, repo_name,
         branch=default_branch,
+        extra_patterns=extra_patterns,
     )
     findings += tree_findings
 
@@ -197,6 +219,8 @@ async def _scan_repo(
     )
     search_findings = await _scan_repo_via_search(
         ctx, client, org, project, repo_name,
+        extra_patterns=extra_patterns,
+        extra_queries=extra_queries,
     )
     findings += search_findings
 
@@ -212,13 +236,17 @@ async def _scan_repo_via_search(
     org: str,
     project: str,
     repo_name: str,
+    *,
+    extra_patterns: list[Any] | None = None,
+    extra_queries: list[Any] | None = None,
 ) -> int:
     """Fallback: find credentials via ALM Code Search when tree listing fails."""
     findings = 0
     snippet_fetches = 0
     covered_paths: set[str] = set()
 
-    for query in SCAN_QUERIES:
+    all_queries = list(SCAN_QUERIES) + (extra_queries or [])
+    for query in all_queries:
         try:
             async for page in client.code_search_pages(
                 project,
@@ -234,6 +262,7 @@ async def _scan_repo_via_search(
                     n, fetched = await _process_code_result(
                         ctx, client, org, project, result,
                         fetch_content=can_fetch,
+                        extra_patterns=extra_patterns,
                     )
                     if fetched:
                         snippet_fetches += 1
@@ -257,6 +286,7 @@ async def _process_code_result(
     result: CodeSearchResult,
     *,
     fetch_content: bool = True,
+    extra_patterns: list[Any] | None = None,
 ) -> tuple[int | None, bool]:
     """Returns (finding_count_or_None, did_fetch_file).
 
@@ -289,6 +319,7 @@ async def _process_code_result(
         branch=result.branch or "main",
         skip_filters=True,
         find_all=True,
+        extra_patterns=extra_patterns,
     )
 
     if not matches and not fetched and fetch_content:
@@ -307,6 +338,7 @@ async def _process_code_result(
                 branch=result.branch or "main",
                 skip_filters=True,
                 find_all=True,
+                extra_patterns=extra_patterns,
             )
             clean_text = content
 
@@ -342,6 +374,9 @@ async def _scan_work_items(
     client: Any,
     org: str,
     projects: list[str],
+    *,
+    extra_terms: list[str] | None = None,
+    extra_patterns: list[Any] | None = None,
 ) -> int:
     findings = 0
     seen_wi: set[str] = set()
@@ -352,6 +387,10 @@ async def _scan_work_items(
         "access key",
         "api key",
     ]
+    if extra_terms:
+        for t in extra_terms:
+            if t not in wi_search_terms:
+                wi_search_terms.append(t)
 
     for proj in projects:
         for search_text in wi_search_terms:
@@ -450,6 +489,7 @@ async def _scan_repo_tree(
     repo_name: str,
     *,
     branch: str = "main",
+    extra_patterns: list[Any] | None = None,
 ) -> tuple[int, int, bool]:
     """Scan all scannable files in the repo tree.
 
@@ -505,6 +545,7 @@ async def _scan_repo_tree(
                 resource_id=f"ado://{org}/{project}/{repo_name}",
                 skip_filters=True,
                 find_all=True,
+                extra_patterns=extra_patterns,
             )
             findings += count
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from cred_engine.patterns import PATTERNS as CE_PATTERNS
+from cred_engine.patterns import PATTERNS as CE_PATTERNS, CredPattern
 from cred_engine.pipeline import scan_content as ce_scan_content
 from cred_engine.var_classifier import classify as ce_classify
 from cred_engine.var_confidence import score_target as ce_score_target
@@ -32,6 +32,13 @@ _EXTRA_DETAIL_KEYS = (
 )
 
 
+def _merge_patterns(extra: list[CredPattern] | None) -> list[CredPattern] | None:
+    """Merge extra patterns with the built-in set, or None for defaults."""
+    if not extra:
+        return None
+    return list(CE_PATTERNS) + extra
+
+
 def scan_text(
     content: str,
     *,
@@ -40,6 +47,7 @@ def scan_text(
     repo: str = "",
     skip_filters: bool = False,
     find_all: bool = False,
+    extra_patterns: list[CredPattern] | None = None,
 ) -> list[dict[str, Any]]:
     """Scan raw text for credentials using cred-engine's full pattern set.
 
@@ -50,6 +58,7 @@ def scan_text(
     return ce_scan_content(
         file_path, content, branch=branch, repo=repo,
         skip_filters=skip_filters, find_all=find_all,
+        patterns=_merge_patterns(extra_patterns),
     )
 
 
@@ -69,6 +78,7 @@ def scan_and_record(
     extra_details: dict[str, Any] | None = None,
     skip_filters: bool = False,
     find_all: bool = False,
+    extra_patterns: list[CredPattern] | None = None,
 ) -> int:
     """Scan text content and write findings to Beachhead's stores.
 
@@ -79,6 +89,7 @@ def scan_and_record(
     matches = ce_scan_content(
         file_path, content, branch=branch, repo=repo,
         skip_filters=skip_filters, find_all=find_all,
+        patterns=_merge_patterns(extra_patterns),
     )
     resolved_resource = resource_id or (f"ado://{org}/{project}/{repo}" if org else repo)
     seen_values: set[str] = set()
@@ -229,6 +240,7 @@ def scan_snippet(
     branch: str = "main",
     skip_filters: bool = False,
     find_all: bool = False,
+    extra_patterns: list[CredPattern] | None = None,
 ) -> list[dict[str, Any]]:
     """Scan an ADO search snippet (HTML stripped) against cred-engine patterns.
 
@@ -240,6 +252,7 @@ def scan_snippet(
     return ce_scan_content(
         file_path, clean, branch=branch, repo=repo,
         skip_filters=skip_filters, find_all=find_all,
+        patterns=_merge_patterns(extra_patterns),
     )
 
 

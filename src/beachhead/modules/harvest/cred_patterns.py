@@ -13,9 +13,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from cred_engine.patterns import PATTERNS as CE_PATTERNS
+from cred_engine.patterns import PATTERNS as CE_PATTERNS, CredPattern
+from cred_engine.models import Severity
 
-__all__ = ["ScanQuery", "SCAN_QUERIES"]
+__all__ = ["ScanQuery", "SCAN_QUERIES", "build_custom_patterns", "build_custom_queries"]
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,40 @@ def _group_patterns() -> list[ScanQuery]:
 
 
 SCAN_QUERIES: tuple[ScanQuery, ...] = tuple(_group_patterns())
+
+
+def build_custom_patterns(terms: tuple[str, ...] | list[str]) -> list[CredPattern]:
+    """Convert operator-supplied search terms into CredPattern objects.
+
+    Each term becomes a pattern whose regex matches the term as part of a
+    compound identifier (e.g. ``demo`` matches ``DEMO_API_KEY = value``,
+    ``demo-token: value``, etc.) with a value of at least 4 characters.
+    """
+    patterns: list[CredPattern] = []
+    for term in terms:
+        escaped = re.escape(term)
+        regex = rf"(?i)[\w.-]*{escaped}[\w.-]*\s*[=:]\s*['\"]?([^\s'\"]{{4,}})"
+        patterns.append(CredPattern(
+            name=f"Custom: {term}",
+            search_terms=[term],
+            severity=Severity.MEDIUM,
+            extensions=(),
+            min_entropy=None,
+            secret_regex=regex,
+        ))
+    return patterns
+
+
+def build_custom_queries(terms: tuple[str, ...] | list[str]) -> list[ScanQuery]:
+    """Build ScanQuery objects from operator-supplied search terms."""
+    if not terms:
+        return []
+    search_text = " OR ".join(f'"{t}"' if " " in t else t for t in terms)
+    return [ScanQuery(
+        id="custom_terms",
+        search_text=search_text,
+        pattern_names=tuple(f"Custom: {t}" for t in terms),
+    )]
 
 
 _CRED_INDICATOR_RE = re.compile(

@@ -49,6 +49,7 @@ class Finding:
     details: dict[str, object]
     run_id: str
     collected_at: str
+    false_positive: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,7 @@ class AttackPath:
     description: str
     run_id: str
     collected_at: str
+    false_positive: bool = False
 
 
 @dataclass(frozen=True, slots=True)

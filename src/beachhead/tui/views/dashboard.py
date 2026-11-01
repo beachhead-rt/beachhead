@@ -1,4 +1,4 @@
-"""Dashboard: stats panel, recent runs, report export.
+"""Dashboard: stats panel, recent runs, report export, search term editor.
 
 Renders a two-column stats grid using Rich Table inside a Static widget —
 avoids Textual card-layout sizing issues and gives clean, aligned output
@@ -7,7 +7,8 @@ tell the operator how to jump to the detail view.
 
 The Report section at the bottom provides an Export button that opens a
 modal for filename, format, and optional credential inclusion with a
-confirmation gate.
+confirmation gate.  The Search Terms button opens an editor for the
+operator's custom credential search terms (persisted to the config YAML).
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
@@ -249,6 +251,72 @@ class ExportScreen(ModalScreen[dict[str, Any] | None]):
             self.dismiss({"filename": filename, "include_secrets": include_secrets})
 
 
+class SearchTermsScreen(ModalScreen[list[str] | None]):
+    """Modal for editing custom credential search terms."""
+
+    CSS = """
+    SearchTermsScreen {
+        align: center middle;
+    }
+    #terms-dialog {
+        width: 72;
+        height: auto;
+        max-height: 24;
+        border: thick $accent;
+        padding: 1 2;
+    }
+    #terms-dialog Static {
+        height: auto;
+    }
+    #terms-buttons {
+        height: 3;
+        margin-top: 1;
+    }
+    #terms-buttons Button {
+        margin-right: 1;
+    }
+    #terms-status {
+        height: auto;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, current_terms: tuple[str, ...] = ()) -> None:
+        super().__init__()
+        self._current = current_terms
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="terms-dialog"):
+            yield Static("[bold]Custom Search Terms[/]")
+            yield Static(
+                "[dim]Comma-separated terms fed to the cred-engine. "
+                "Matches compound names (e.g. 'PROD' catches PROD_API_KEY).[/]"
+            )
+            yield Input(
+                value=", ".join(self._current),
+                placeholder="e.g. [known-secret-value], sqladmin, api-key, prod-key",
+                id="terms-input",
+            )
+            with Horizontal(id="terms-buttons"):
+                yield Button("Save", id="terms-save", variant="primary")
+                yield Button("Cancel", id="terms-cancel")
+            yield Static("", id="terms-status")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "terms-cancel":
+            self.dismiss(None)
+        elif event.button.id == "terms-save":
+            raw = self.query_one("#terms-input", Input).value
+            terms = [t.strip() for t in raw.split(",") if t.strip()]
+            self.dismiss(terms)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "terms-input":
+            raw = event.value
+            terms = [t.strip() for t in raw.split(",") if t.strip()]
+            self.dismiss(terms)
+
+
 class DashboardView(Vertical):
     DEFAULT_CSS = """
     DashboardView {
@@ -269,6 +337,9 @@ class DashboardView(Vertical):
         height: auto;
     }
     #report-section {
+        width: 1fr;
+    }
+    #config-section {
         width: 1fr;
     }
     #teardown-section {
@@ -309,6 +380,9 @@ class DashboardView(Vertical):
             with Vertical(id="report-section"):
                 yield Static("Report", classes="view-title")
                 yield Button("Export", id="export-btn", variant="primary", disabled=True)
+            with Vertical(id="config-section"):
+                yield Static("Config", classes="view-title")
+                yield Button("Search Terms", id="search-terms-btn", variant="default")
             with Vertical(id="teardown-section"):
                 yield Static("Teardown", classes="view-title")
                 yield Button("Start", id="teardown-btn", variant="error")
@@ -332,6 +406,10 @@ class DashboardView(Vertical):
         self.query_one("#stats-panel", Static).update(_build_stats(summary))
         self.query_one("#export-btn", Button).disabled = summary.runs == 0
 
+        terms = getattr(self._surface.config, "custom_search_terms", ())
+        btn = self.query_one("#search-terms-btn", Button)
+        btn.label = f"Search Terms ({len(terms)})" if terms else "Search Terms"
+
         table = self.query_one("#recent", DataTable)
         table.clear()
         for run in store.runs()[:10]:
@@ -340,6 +418,12 @@ class DashboardView(Vertical):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "export-btn":
             self.app.push_screen(ExportScreen(), callback=self._on_export_result)
+        elif event.button.id == "search-terms-btn":
+            current = getattr(self._surface.config, "custom_search_terms", ())
+            self.app.push_screen(
+                SearchTermsScreen(current_terms=current),
+                callback=self._on_search_terms_result,
+            )
         elif event.button.id == "teardown-btn":
             from beachhead.tui.views.teardown import TeardownScreen
 
@@ -350,6 +434,38 @@ class DashboardView(Vertical):
                 ),
                 callback=self._on_teardown_result,
             )
+
+    def _on_search_terms_result(self, terms: list[str] | None) -> None:
+        if terms is None:
+            return
+        self.run_worker(self._save_search_terms(terms))
+
+    async def _save_search_terms(self, terms: list[str]) -> None:
+        from beachhead.core.config import resolve_config_path
+
+        status = self.query_one("#export-result", Static)
+        resolved = resolve_config_path(self._config_path)
+        try:
+            raw = yaml.safe_load(resolved.read_text()) or {}
+            raw["custom_search_terms"] = terms
+            header = ""
+            text = resolved.read_text()
+            for line in text.splitlines(keepends=True):
+                if line.startswith("#"):
+                    header += line
+                else:
+                    break
+            resolved.write_text(
+                header + yaml.dump(raw, default_flow_style=False, sort_keys=False)
+            )
+            count = len(terms)
+            if count:
+                status.update(f"[green]Saved {count} custom search term(s). Reload to apply.[/]")
+            else:
+                status.update("[green]Custom search terms cleared. Reload to apply.[/]")
+        except Exception as exc:  # noqa: BLE001
+            _log.debug("failed to save search terms", exc_info=True)
+            status.update(f"[red]Failed to save search terms: {exc}[/]")
 
     def _on_teardown_result(self, executed: bool | None) -> None:
         if executed:

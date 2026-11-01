@@ -98,10 +98,13 @@ class AttackPathsView(TableView):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         ("o", "open_url", "Open in SpyGlass"),
+        ("f", "toggle_fp", "Toggle FP"),
+        ("a", "toggle_show_fp", "Show/hide FP"),
     ]
 
     min_score_filter: float = 0.0
     _path_rows: list[_PathRow]
+    _show_fp: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(self.title, classes="view-title")
@@ -118,7 +121,7 @@ class AttackPathsView(TableView):
         return super()._format_cell(key, value)
 
     def fetch(self) -> list[Any]:
-        paths = self._store.attack_paths()
+        paths = self._store.attack_paths(include_fp=self._show_fp)
         if self.min_score_filter > 0:
             paths = [p for p in paths if p.score >= self.min_score_filter]
         needle = self.query_one("#path-filter", Input).value.strip().lower()
@@ -133,9 +136,48 @@ class AttackPathsView(TableView):
         self._path_rows = [_PathRow(p) for p in paths]
         return self._path_rows
 
+    def reload(self) -> None:
+        super().reload()
+        if not self._show_fp or not hasattr(self, "_path_rows"):
+            return
+        table = self.query_one("#table", DataTable)
+        for idx, pr in enumerate(self._path_rows):
+            if pr.false_positive:
+                for col_idx in range(len(self.columns)):
+                    table.update_cell_at((idx, col_idx), Text(str(table.get_cell_at((idx, col_idx))), style="dim strike"))
+
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "path-filter":
             self.reload()
+
+    def action_toggle_fp(self) -> None:
+        status = self.query_one("#status-bar", Static)
+        if not hasattr(self, "_path_rows") or not self._path_rows:
+            status.update("[yellow]No attack paths to dismiss.[/]")
+            return
+        table = self.query_one("#table", DataTable)
+        cursor = table.cursor_row
+        if cursor < 0 or cursor >= len(self._path_rows):
+            return
+        pr = self._path_rows[cursor]
+        store_path = getattr(self.app, "_store_path", "")
+        if not store_path:
+            status.update("[red]Store path not available.[/]")
+            return
+        is_fp = pr.false_positive
+        _toggle_fp_path(store_path, pr.path_id, dismiss=not is_fp)
+        label = "Restored" if is_fp else "Dismissed"
+        status.update(f"[green]{label}[/] attack path {pr.path_id[:12]}")
+        self.reload()
+
+    def action_toggle_show_fp(self) -> None:
+        self._show_fp = not self._show_fp
+        status = self.query_one("#status-bar", Static)
+        if self._show_fp:
+            status.update("[dim]Showing all paths (including false positives)[/]")
+        else:
+            status.update("[dim]Hiding false positives[/]")
+        self.reload()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if not hasattr(self, "_path_rows") or not self._path_rows:
@@ -182,6 +224,7 @@ class _PathRow:
 
     def __init__(self, path: Any) -> None:
         self.path_id = path.id
+        self.false_positive = getattr(path, "false_positive", False)
         self.score = f"{path.score:.1f}"
         self.source_id = path.source_id
         self.target_id = path.target_id
@@ -336,6 +379,30 @@ class ResourcesView(TableView):
         _open_in_spyglass(url, status, project=extract_project(r.resource_id))
 
 
+def _toggle_fp_finding(store_path: str, finding_id: str, *, dismiss: bool) -> bool:
+    from beachhead.core.store.engine import open_store
+
+    st = open_store(store_path)
+    try:
+        if dismiss:
+            return st.dismiss_finding(finding_id)
+        return st.restore_finding(finding_id)
+    finally:
+        st.close()
+
+
+def _toggle_fp_path(store_path: str, path_id: str, *, dismiss: bool) -> bool:
+    from beachhead.core.store.engine import open_store
+
+    st = open_store(store_path)
+    try:
+        if dismiss:
+            return st.dismiss_attack_path(path_id)
+        return st.restore_attack_path(path_id)
+    finally:
+        st.close()
+
+
 class FindingsView(TableView):
     title = "Findings"
     empty_text = (
@@ -350,9 +417,12 @@ class FindingsView(TableView):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         ("o", "open_url", "Open in SpyGlass"),
+        ("f", "toggle_fp", "Toggle FP"),
+        ("a", "toggle_show_fp", "Show/hide FP"),
     ]
 
     _finding_rows: list[_FindingRow]
+    _show_fp: bool = False
 
     def compose(self) -> ComposeResult:
         yield Static(self.title, classes="view-title")
@@ -362,14 +432,56 @@ class FindingsView(TableView):
         yield Static("", id="empty")
 
     def fetch(self) -> list[Any]:
-        rows = self._store.findings()
+        rows = self._store.findings(include_fp=self._show_fp)
         needle = self.query_one("#filter", Input).value.strip().lower()
         if needle:
             rows = [f for f in rows if needle in f.kind.lower() or needle in f.reference.lower()]
         self._finding_rows = [_FindingRow(f) for f in rows]
         return self._finding_rows
 
+    def _format_cell(self, key: str, value: Any) -> str | Text:
+        return super()._format_cell(key, value)
+
+    def reload(self) -> None:
+        super().reload()
+        if not self._show_fp or not hasattr(self, "_finding_rows"):
+            return
+        table = self.query_one("#table", DataTable)
+        for idx, fr in enumerate(self._finding_rows):
+            if fr.false_positive:
+                for col_idx in range(len(self.columns)):
+                    table.update_cell_at((idx, col_idx), Text(str(table.get_cell_at((idx, col_idx))), style="dim strike"))
+
     def on_input_changed(self, event: Input.Changed) -> None:
+        self.reload()
+
+    def action_toggle_fp(self) -> None:
+        status = self.query_one("#status-bar", Static)
+        if not hasattr(self, "_finding_rows") or not self._finding_rows:
+            status.update("[yellow]No findings to dismiss.[/]")
+            return
+        table = self.query_one("#table", DataTable)
+        cursor = table.cursor_row
+        if cursor < 0 or cursor >= len(self._finding_rows):
+            return
+        fr = self._finding_rows[cursor]
+        store_path = getattr(self.app, "_store_path", "")
+        if not store_path:
+            status.update("[red]Store path not available.[/]")
+            return
+        is_fp = fr.false_positive
+        _toggle_fp_finding(store_path, fr.finding_id, dismiss=not is_fp)
+        label = "Restored" if is_fp else "Dismissed"
+        status.update(f"[green]{label}[/] finding {fr.finding_id[:12]}")
+        self.reload()
+
+    def action_toggle_show_fp(self) -> None:
+        self._show_fp = not self._show_fp
+        status = self.query_one("#status-bar", Static)
+        if self._show_fp:
+            status.update("[dim]Showing all findings (including false positives)[/]")
+        else:
+            status.update("[dim]Hiding false positives[/]")
         self.reload()
 
     def action_open_url(self) -> None:
@@ -430,6 +542,8 @@ class _FindingRow:
     def __init__(self, finding: Any) -> None:
         from beachhead.tui.urls import spyglass_finding_url
 
+        self.finding_id = finding.id
+        self.false_positive = getattr(finding, "false_positive", False)
         self.kind = finding.kind
         self.reference = finding.reference
         self.resource_id = getattr(finding, "resource_id", "")
@@ -488,9 +602,12 @@ class CredentialsView(Vertical):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         ("o", "open_url", "Open in SpyGlass"),
+        ("f", "toggle_fp", "Toggle FP"),
+        ("a", "toggle_show_fp", "Show/hide FP"),
     ]
 
     _creds: list[Any]
+    _show_fp: bool = False
 
     def __init__(self, store_path: str, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -542,7 +659,7 @@ class CredentialsView(Vertical):
         if secrets is None:
             return None
         try:
-            self._all_creds = secrets.list_credentials()
+            self._all_creds = secrets.list_credentials(include_fp=self._show_fp)
         finally:
             secrets.close()
         return self._all_creds
@@ -589,7 +706,54 @@ class CredentialsView(Vertical):
             val = cred.value
             if len(val) > 50:
                 val = val[:47] + "..."
-            table.add_row(cred.kind, cred_type, val, cred.reference, source)
+            style = "dim strike" if getattr(cred, "false_positive", False) else ""
+            if style:
+                table.add_row(
+                    Text(cred.kind, style=style),
+                    Text(cred_type, style=style),
+                    Text(val, style=style),
+                    Text(cred.reference, style=style),
+                    Text(source, style=style),
+                )
+            else:
+                table.add_row(cred.kind, cred_type, val, cred.reference, source)
+
+    def action_toggle_fp(self) -> None:
+        status = self.query_one("#cred-status", Static)
+        if not self._creds:
+            status.update("[yellow]No credentials to dismiss.[/]")
+            return
+        table = self.query_one("#cred-table", DataTable)
+        cursor = table.cursor_row
+        if cursor < 0 or cursor >= len(self._creds):
+            return
+        cred = self._creds[cursor]
+        secrets = self._open_secrets()
+        if secrets is None:
+            status.update("[red]Cannot open secret store.[/]")
+            return
+        try:
+            is_fp = getattr(cred, "false_positive", False)
+            if is_fp:
+                secrets.restore_credential(cred.id)
+            else:
+                secrets.dismiss_credential(cred.id)
+        finally:
+            secrets.close()
+        label = "Restored" if is_fp else "Dismissed"
+        status.update(f"[green]{label}[/] credential {cred.id[:12]}")
+        self.invalidate_cache()
+        self.reload()
+
+    def action_toggle_show_fp(self) -> None:
+        self._show_fp = not self._show_fp
+        status = self.query_one("#cred-status", Static)
+        if self._show_fp:
+            status.update("[dim]Showing all credentials (including false positives)[/]")
+        else:
+            status.update("[dim]Hiding false positives[/]")
+        self.invalidate_cache()
+        self.reload()
 
     def action_open_url(self) -> None:
         from beachhead.tui.urls import spyglass_credential_url

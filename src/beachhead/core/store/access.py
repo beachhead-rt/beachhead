@@ -156,8 +156,8 @@ class Store:
         return StoreSummary(
             runs=_count("SELECT COUNT(*) FROM runs"),
             resources=_count("SELECT COUNT(*) FROM resources"),
-            findings=_count("SELECT COUNT(*) FROM findings"),
-            attack_paths=_count("SELECT COUNT(*) FROM attack_paths"),
+            findings=_count("SELECT COUNT(*) FROM findings WHERE false_positive = 0"),
+            attack_paths=_count("SELECT COUNT(*) FROM attack_paths WHERE false_positive = 0"),
         )
 
     def close(self) -> None:
@@ -253,11 +253,29 @@ class Store:
         )
         return fid
 
+    def dismiss_finding(self, finding_id: str) -> bool:
+        self._write(
+            "UPDATE findings SET false_positive = 1 WHERE id = ?", (finding_id,)
+        )
+        return bool(self._query("SELECT 1 FROM findings WHERE id = ?", (finding_id,)))
+
+    def restore_finding(self, finding_id: str) -> bool:
+        self._write(
+            "UPDATE findings SET false_positive = 0 WHERE id = ?", (finding_id,)
+        )
+        return bool(self._query("SELECT 1 FROM findings WHERE id = ?", (finding_id,)))
+
     def findings(
-        self, *, kind: str | None = None, run_id: str | None = None
+        self,
+        *,
+        kind: str | None = None,
+        run_id: str | None = None,
+        include_fp: bool = False,
     ) -> list[Finding]:
         clauses: list[str] = []
         params: list[object] = []
+        if not include_fp:
+            clauses.append("false_positive = 0")
         if kind is not None:
             clauses.append("kind = ?")
             params.append(kind)
@@ -309,11 +327,46 @@ class Store:
         )
         return pid
 
-    def attack_paths(self) -> list[AttackPath]:
-        return [
-            _attack_path(r)
-            for r in self._query("SELECT * FROM attack_paths ORDER BY score DESC, id")
-        ]
+    def dismiss_attack_path(self, path_id: str) -> bool:
+        self._write(
+            "UPDATE attack_paths SET false_positive = 1 WHERE id = ?", (path_id,)
+        )
+        return bool(self._query("SELECT 1 FROM attack_paths WHERE id = ?", (path_id,)))
+
+    def restore_attack_path(self, path_id: str) -> bool:
+        self._write(
+            "UPDATE attack_paths SET false_positive = 0 WHERE id = ?", (path_id,)
+        )
+        return bool(self._query("SELECT 1 FROM attack_paths WHERE id = ?", (path_id,)))
+
+    def attack_paths(self, *, include_fp: bool = False) -> list[AttackPath]:
+        if include_fp:
+            sql = "SELECT * FROM attack_paths ORDER BY score DESC, id"
+        else:
+            sql = (
+                "SELECT * FROM attack_paths WHERE false_positive = 0"
+                " ORDER BY score DESC, id"
+            )
+        paths = [_attack_path(r) for r in self._query(sql)]
+        if not include_fp:
+            paths = self._suppress_fp_paths(paths)
+        return paths
+
+    def _suppress_fp_paths(self, paths: list[AttackPath]) -> list[AttackPath]:
+        """Filter out paths whose source resource has ONLY FP findings."""
+        if not paths:
+            return paths
+        source_ids = {p.source_id for p in paths}
+        fp_sources: set[str] = set()
+        for sid in source_ids:
+            rows = self._query(
+                "SELECT false_positive FROM findings WHERE resource_id = ?", (sid,)
+            )
+            if rows and all(bool(r["false_positive"]) for r in rows):
+                fp_sources.add(sid)
+        if not fp_sources:
+            return paths
+        return [p for p in paths if p.source_id not in fp_sources]
 
     # ------------------------------- audit ------------------------------- #
     def insert_audit(
@@ -374,6 +427,7 @@ def _finding(row: sqlite3.Row) -> Finding:
         details=json.loads(row["details_json"]),
         run_id=row["run_id"],
         collected_at=row["collected_at"],
+        false_positive=bool(row["false_positive"]),
     )
 
 
@@ -388,6 +442,7 @@ def _attack_path(row: sqlite3.Row) -> AttackPath:
         description=row["description"],
         run_id=row["run_id"],
         collected_at=row["collected_at"],
+        false_positive=bool(row["false_positive"]),
     )
 
 

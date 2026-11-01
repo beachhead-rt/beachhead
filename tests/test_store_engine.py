@@ -18,7 +18,7 @@ EXPECTED_TABLES = {
     "attack_paths",
     "audit_log",
 }
-HIGHEST_MIGRATION = 7
+HIGHEST_MIGRATION = 10
 
 
 DROPPED_AZURE_TABLES = {

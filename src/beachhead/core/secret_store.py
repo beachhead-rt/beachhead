@@ -50,15 +50,16 @@ __all__ = [
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS credentials (
-    id           TEXT PRIMARY KEY,
-    kind         TEXT NOT NULL,
-    resource_id  TEXT,
-    reference    TEXT NOT NULL,
-    redacted     INTEGER NOT NULL DEFAULT 0,
-    value        TEXT NOT NULL,
-    details_json TEXT NOT NULL DEFAULT '{}',
-    run_id       TEXT NOT NULL,
-    collected_at TEXT NOT NULL
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    resource_id     TEXT,
+    reference       TEXT NOT NULL,
+    redacted        INTEGER NOT NULL DEFAULT 0,
+    value           TEXT NOT NULL,
+    details_json    TEXT NOT NULL DEFAULT '{}',
+    run_id          TEXT NOT NULL,
+    collected_at    TEXT NOT NULL,
+    false_positive  INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_credentials_natural
     ON credentials (kind, COALESCE(resource_id, ''), reference);
@@ -91,6 +92,7 @@ class Credential:
     details: dict[str, object]
     run_id: str
     collected_at: str
+    false_positive: bool = False
 
 
 class SecretStore:
@@ -116,6 +118,17 @@ class SecretStore:
         self._path = path
         self._passphrase = passphrase
         self._conn.executescript(_SCHEMA)
+        self._ensure_fp_column()
+
+    def _ensure_fp_column(self) -> None:
+        cols = {
+            r[1]
+            for r in self._conn.execute("PRAGMA table_info(credentials)").fetchall()
+        }
+        if "false_positive" not in cols:
+            self._conn.execute(
+                "ALTER TABLE credentials ADD COLUMN false_positive INTEGER NOT NULL DEFAULT 0"
+            )
 
     def store_credential(
         self,
@@ -154,29 +167,51 @@ class SecretStore:
         )
         return cred_id
 
+    def dismiss_credential(self, cred_id: str) -> bool:
+        self._conn.execute(
+            "UPDATE credentials SET false_positive = 1 WHERE id = ?", (cred_id,)
+        )
+        row = self._conn.execute(
+            "SELECT 1 FROM credentials WHERE id = ?", (cred_id,)
+        ).fetchone()
+        return row is not None
+
+    def restore_credential(self, cred_id: str) -> bool:
+        self._conn.execute(
+            "UPDATE credentials SET false_positive = 0 WHERE id = ?", (cred_id,)
+        )
+        row = self._conn.execute(
+            "SELECT 1 FROM credentials WHERE id = ?", (cred_id,)
+        ).fetchone()
+        return row is not None
+
     def list_credentials(
         self,
         *,
         kind: str | None = None,
+        include_fp: bool = False,
     ) -> list[Credential]:
+        cols = ("id, kind, resource_id, reference, redacted,"
+                " value, details_json, run_id, collected_at, false_positive")
+        clauses: list[str] = []
+        params: list[object] = []
+        if not include_fp:
+            clauses.append("false_positive = 0")
         if kind is not None:
-            rows = self._conn.execute(
-                "SELECT id, kind, resource_id, reference, redacted,"
-                " value, details_json, run_id, collected_at"
-                " FROM credentials WHERE kind = ?"
-                " ORDER BY collected_at DESC",
-                (kind,),
-            ).fetchall()
-        else:
-            rows = self._conn.execute(
-                "SELECT id, kind, resource_id, reference, redacted,"
-                " value, details_json, run_id, collected_at"
-                " FROM credentials ORDER BY collected_at DESC",
-            ).fetchall()
+            clauses.append("kind = ?")
+            params.append(kind)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self._conn.execute(
+            f"SELECT {cols} FROM credentials{where}"  # noqa: S608
+            " ORDER BY collected_at DESC",
+            params,
+        ).fetchall()
         return [_credential(r) for r in rows]
 
     def credential_count(self) -> int:
-        row = self._conn.execute("SELECT COUNT(*) FROM credentials").fetchone()
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM credentials WHERE false_positive = 0"
+        ).fetchone()
         return row[0] if row else 0
 
     def flush(self) -> None:
@@ -201,6 +236,7 @@ def _credential(row: tuple) -> Credential:  # type: ignore[type-arg]
         details=json.loads(row[6]) if row[6] else {},
         run_id=row[7],
         collected_at=row[8],
+        false_positive=bool(row[9]) if len(row) > 9 else False,
     )
 
 

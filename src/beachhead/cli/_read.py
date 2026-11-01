@@ -187,12 +187,13 @@ def resources(
 def paths(
     ctx: typer.Context,
     since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
+    all_: bool = typer.Option(False, "--all", help="Include false positives."),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Attack paths. (bh paths, bh paths --json)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
-        rows = fetch(json_, sc.store.attack_paths)
+        rows = fetch(json_, lambda: sc.store.attack_paths(include_fp=all_))
         cutoff = parse_since(since) if since else None
         rows = filter_by_time(rows, cutoff, "collected_at")
         dicts = [asdict(p) for p in rows]
@@ -221,12 +222,13 @@ def findings(
     ctx: typer.Context,
     kind: str | None = typer.Option(None, "--kind", help="Filter by finding kind."),
     since: str | None = typer.Option(None, "--since", help=SINCE_HELP),
+    all_: bool = typer.Option(False, "--all", help="Include false positives."),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     """Collected findings. (bh findings, bh findings --kind ado_credential)"""
     sc = load_surface(ctx.obj, json_=json_)
     try:
-        rows = fetch(json_, lambda: sc.store.findings(kind=kind))
+        rows = fetch(json_, lambda: sc.store.findings(kind=kind, include_fp=all_))
         cutoff = parse_since(since) if since else None
         rows = filter_by_time(rows, cutoff, "collected_at")
         dicts = [asdict(f) for f in rows]

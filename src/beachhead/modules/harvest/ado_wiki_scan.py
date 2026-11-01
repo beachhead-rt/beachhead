@@ -20,6 +20,7 @@ from urllib.parse import quote, unquote
 from cred_engine.patterns import PATTERNS as _CE_PATTERNS
 
 from beachhead.core.cred_bridge import record_snippet_matches, scan_text
+from beachhead.modules.harvest.cred_patterns import build_custom_patterns
 from beachhead.core.errors import AuthError, ScopeError
 from beachhead.core.module import Access, ModuleMeta, Phase, RunContext, RunResult
 from beachhead.modules.enumerate._ado_common import (
@@ -93,6 +94,14 @@ class AdoWikiScan:
         if not orgs:
             return no_orgs_result(ctx)
 
+        custom_terms: tuple[str, ...] = getattr(ctx.config, "custom_search_terms", ())
+        custom_pats = build_custom_patterns(custom_terms) if custom_terms else None
+        extra_search = list(custom_terms)
+        if custom_terms:
+            ctx.console.print(
+                f"[dim]Custom search terms active: {len(custom_terms)} term(s)[/]"
+            )
+
         total_findings = 0
         total_pages_scanned = 0
 
@@ -111,11 +120,16 @@ class AdoWikiScan:
                     p["name"] for p in projects if isinstance(p, dict) and "name" in p
                 ]
                 for proj in proj_names:
-                    page_map = await _discover_all_pages(ctx, client, proj)
+                    page_map = await _discover_all_pages(
+                        ctx, client, proj, extra_search=extra_search,
+                    )
 
                     total_pages_scanned += len(page_map)
                     scan_results = await asyncio.gather(
-                        *(_scan_wiki_page(ctx, client, org, proj, info)
+                        *(_scan_wiki_page(
+                            ctx, client, org, proj, info,
+                            extra_patterns=custom_pats,
+                          )
                           for info in page_map.values()),
                         return_exceptions=True,
                     )
@@ -136,7 +150,8 @@ class AdoWikiScan:
 
 
 async def _discover_all_pages(
-    ctx: RunContext, client: Any, project: str
+    ctx: RunContext, client: Any, project: str,
+    *, extra_search: list[str] | None = None,
 ) -> dict[str, "_PageInfo"]:
     """Discover wiki pages — enumerate directly, fall back to search."""
     page_map: dict[str, _PageInfo] = {}
@@ -180,7 +195,12 @@ async def _discover_all_pages(
             f"  [dim]No wikis enumerated for {project} — "
             f"falling back to search-based discovery[/]"
         )
-        pages = _collect_pages(client, project, _WIKI_SEARCH_QUERIES)
+        search_queries = list(_WIKI_SEARCH_QUERIES)
+        if extra_search:
+            for t in extra_search:
+                if t not in search_queries:
+                    search_queries.append(t)
+        pages = _collect_pages(client, project, search_queries)
         async for info in pages:
             page_map.setdefault(info.dedup_key, info).snippets.update(
                 info.snippets
@@ -266,6 +286,8 @@ async def _scan_wiki_page(
     org: str,
     project: str,
     info: _PageInfo,
+    *,
+    extra_patterns: list[Any] | None = None,
 ) -> int:
     """Fetch full wiki page content and scan it; fall back to snippets."""
     page_url = (
@@ -284,6 +306,7 @@ async def _scan_wiki_page(
             repo=info.wiki_name,
             skip_filters=True,
             find_all=True,
+            extra_patterns=extra_patterns,
         )
         if matches:
             matches = _sort_by_relevance(matches, content)
@@ -333,6 +356,7 @@ async def _scan_wiki_page(
         repo=info.wiki_name,
         skip_filters=True,
         find_all=True,
+        extra_patterns=extra_patterns,
     )
     if not matches:
         return 0
