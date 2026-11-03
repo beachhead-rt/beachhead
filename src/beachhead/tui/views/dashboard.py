@@ -364,6 +364,9 @@ class DashboardView(Vertical):
         self._surface: SurfaceContext = surface
         self._store_path = store_path
         self._config_path = config_path
+        self._custom_terms: tuple[str, ...] = tuple(
+            getattr(surface.config, "custom_search_terms", ()) or ()
+        )
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -406,9 +409,8 @@ class DashboardView(Vertical):
         self.query_one("#stats-panel", Static).update(_build_stats(summary))
         self.query_one("#export-btn", Button).disabled = summary.runs == 0
 
-        terms = getattr(self._surface.config, "custom_search_terms", ())
         btn = self.query_one("#search-terms-btn", Button)
-        btn.label = f"Search Terms ({len(terms)})" if terms else "Search Terms"
+        btn.label = f"Search Terms ({len(self._custom_terms)})" if self._custom_terms else "Search Terms"
 
         table = self.query_one("#recent", DataTable)
         table.clear()
@@ -419,9 +421,8 @@ class DashboardView(Vertical):
         if event.button.id == "export-btn":
             self.app.push_screen(ExportScreen(), callback=self._on_export_result)
         elif event.button.id == "search-terms-btn":
-            current = getattr(self._surface.config, "custom_search_terms", ())
             self.app.push_screen(
-                SearchTermsScreen(current_terms=current),
+                SearchTermsScreen(current_terms=self._custom_terms),
                 callback=self._on_search_terms_result,
             )
         elif event.button.id == "teardown-btn":
@@ -458,11 +459,14 @@ class DashboardView(Vertical):
             resolved.write_text(
                 header + yaml.dump(raw, default_flow_style=False, sort_keys=False)
             )
+            self._custom_terms = tuple(terms)
+            btn = self.query_one("#search-terms-btn", Button)
+            btn.label = f"Search Terms ({len(terms)})" if terms else "Search Terms"
             count = len(terms)
             if count:
-                status.update(f"[green]Saved {count} custom search term(s). Reload to apply.[/]")
+                status.update(f"[green]Saved {count} custom search term(s).[/]")
             else:
-                status.update("[green]Custom search terms cleared. Reload to apply.[/]")
+                status.update("[green]Custom search terms cleared.[/]")
         except Exception as exc:  # noqa: BLE001
             _log.debug("failed to save search terms", exc_info=True)
             status.update(f"[red]Failed to save search terms: {exc}[/]")
