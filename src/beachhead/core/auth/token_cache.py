@@ -166,7 +166,8 @@ def _check_permissions_win(path: Path) -> None:
 
             warnings.warn(
                 f"token cache {path} may be accessible to other users; "
-                f"run: icacls \"{path}\" /inheritance:r /grant:r \"%USERNAME%:F\"",
+                f'run: icacls "{path}" /inheritance:r /grant:r'
+                f' "${{env:USERNAME}}:(F)"',
                 stacklevel=4,
             )
     except (OSError, subprocess.TimeoutExpired):

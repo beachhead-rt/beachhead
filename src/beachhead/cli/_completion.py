@@ -19,16 +19,25 @@ $scriptblock = {
     $Env:%(complete_var)s = "complete_powershell"
     $Env:_TYPER_COMPLETE_ARGS = $commandAst.ToString()
     $Env:_TYPER_COMPLETE_WORD_TO_COMPLETE = $wordToComplete
-    %(prog)s | ForEach-Object {
-        $commandArray = $_ -Split ":::"
-        $command = $commandArray[0]
-        $helpString = $commandArray[1]
-        [System.Management.Automation.CompletionResult]::new(
-            $command, $command, 'ParameterValue', $helpString)
+    $Env:COLUMNS = "200"
+    try {
+        %(prog)s | ForEach-Object {
+            if ($_ -match ":::") {
+                $commandArray = $_ -Split ":::", 2
+                $command = $commandArray[0].Trim()
+                $helpString = $commandArray[1].Trim()
+                if ($command) {
+                    [System.Management.Automation.CompletionResult]::new(
+                        $command, $command, 'ParameterValue', $helpString)
+                }
+            }
+        }
+    } finally {
+        Remove-Item Env:%(complete_var)s -ErrorAction SilentlyContinue
+        Remove-Item Env:_TYPER_COMPLETE_ARGS -ErrorAction SilentlyContinue
+        Remove-Item Env:_TYPER_COMPLETE_WORD_TO_COMPLETE -ErrorAction SilentlyContinue
+        Remove-Item Env:COLUMNS -ErrorAction SilentlyContinue
     }
-    $Env:%(complete_var)s = ""
-    $Env:_TYPER_COMPLETE_ARGS = ""
-    $Env:_TYPER_COMPLETE_WORD_TO_COMPLETE = ""
 }
 Register-ArgumentCompleter -Native -CommandName %(prog)s -ScriptBlock $scriptblock
 """
@@ -76,18 +85,19 @@ def _detect_shell() -> str | None:
 
 def _get_profile_path(shell: str) -> Path | None:
     if shell in ("powershell", "pwsh"):
-        try:
-            r = subprocess.run(  # noqa: S603
-                [shell, "-NoProfile", "-Command", "echo", "$profile"],
-                capture_output=True,
-                timeout=5,
-            )
-            if r.returncode == 0 and r.stdout:
-                raw = r.stdout.decode("utf-8", errors="replace").strip()
-                if raw:
-                    return Path(raw)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        for binary in ("pwsh", "powershell"):
+            try:
+                r = subprocess.run(  # noqa: S603
+                    [binary, "-NoProfile", "-Command", "echo", "$profile"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if r.returncode == 0 and r.stdout:
+                    raw = r.stdout.decode("utf-8", errors="replace").strip()
+                    if raw:
+                        return Path(raw)
+            except Exception:  # noqa: BLE001
+                continue
         return None
     if shell == "bash":
         return Path.home() / ".bashrc"
@@ -96,14 +106,39 @@ def _get_profile_path(shell: str) -> Path | None:
     return None
 
 
+def _get_ps_profiles() -> list[Path]:
+    """Discover all PowerShell profile paths (PS7/pwsh and PS5/powershell)."""
+    profiles: list[Path] = []
+    for binary in ("pwsh", "powershell"):
+        try:
+            r = subprocess.run(  # noqa: S603
+                [binary, "-NoProfile", "-Command", "echo", "$profile"],
+                capture_output=True,
+                timeout=5,
+            )
+            if r.returncode == 0 and r.stdout:
+                raw = r.stdout.decode("utf-8", errors="replace").strip()
+                if raw:
+                    p = Path(raw)
+                    if p not in profiles:
+                        profiles.append(p)
+        except Exception:  # noqa: BLE001
+            continue
+    return profiles
+
+
 def _already_installed(profile: Path) -> bool:
     if not profile.is_file():
         return False
     try:
         content = profile.read_text(encoding="utf-8", errors="replace")
-        return f"Register-ArgumentCompleter -Native -CommandName {_PROG}" in content or \
-               f"complete -o default -F _{_PROG}_completion {_PROG}" in content or \
-               f"compdef _{_PROG}_completion {_PROG}" in content
+        if f"Register-ArgumentCompleter -Native -CommandName {_PROG}" not in content and \
+           f"complete -o default -F _{_PROG}_completion {_PROG}" not in content and \
+           f"compdef _{_PROG}_completion {_PROG}" not in content:
+            return False
+        if "try {" not in content and f"Remove-Item Env:{_COMPLETE_VAR}" not in content:
+            return False
+        return True
     except Exception:  # noqa: BLE001
         return False
 
@@ -138,26 +173,37 @@ def _do_install() -> None:
     if not script:
         return
 
-    profile = _get_profile_path(shell)
-    if not profile:
+    if shell in ("powershell", "pwsh"):
+        profiles = _get_ps_profiles()
+    else:
+        p = _get_profile_path(shell)
+        profiles = [p] if p else []
+
+    if not profiles:
         return
 
-    if _already_installed(profile):
+    if all(_already_installed(p) for p in profiles):
         _write_marker()
         return
 
     if not sys.stderr.isatty():
         return
 
-    profile.parent.mkdir(parents=True, exist_ok=True)
-    with profile.open("a", encoding="utf-8") as f:
-        f.write(f"\n{script}\n")
+    installed: list[Path] = []
+    for profile in profiles:
+        if _already_installed(profile):
+            continue
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        with profile.open("a", encoding="utf-8") as f:
+            f.write(f"\n{script}\n")
+        installed.append(profile)
 
     _write_marker()
 
-    if sys.stderr.isatty():
+    if installed and sys.stderr.isatty():
+        paths = ", ".join(str(p) for p in installed)
         sys.stderr.write(
-            f"\x1b[2m[bh] Tab completion installed in {profile}. "
+            f"\x1b[2m[bh] Tab completion installed in {paths}. "
             "Restart your shell to activate.\x1b[0m\n"
         )
 
